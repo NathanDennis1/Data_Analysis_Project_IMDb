@@ -1,0 +1,512 @@
+---
+title: "Effect of Content on IMDb Ratings"
+author: "Nathan D, Peyton R, Daoming L"
+date: "`r Sys.Date()`"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r load-packages, include=FALSE}
+library(tidyverse)
+library(tidymodels)
+library(broom)
+library(janitor)
+library(ggridges)
+library(corrplot)
+```
+
+### Introduction
+The dataset we are using is available on [Kaggle](https://www.kaggle.com/mazenramadan/imdb-most-popular-films-and-series). The data in the dataset was collected from imdb.com, where users are able to rate various films or series on their website based on how good they thought it was. These ratings are averaged to create one single continuous numerical mean IMDb rating ranging from 1.0 to 10.0 for each film / series. This rating is the variable, Rate, in our dataset. IMDb ratings are useful to see what people think about a show or movie before watching it. Our dataset includes about 6000 of the most popular tv shows and movies.
+
+The variables in the data set, other than Rate, that could affect IMDb rating include Date (Air date), Votes (Total votes), Genre, Duration, Type (series or film/movie), Certificate (Rated R, PG-13, etc.), Episodes, Nudity (Amount of nudity), Violence (Amount of violence), Profanity (Amount of profanity), Alcohol (Amount of alcohol), and Frightening (How frightening). The final variable in the data set is Name, which is the name of the film / series, but is unique for each row. All of these other variables are details about specific productions that may affect IMDb ratings, some of which we will be investigating.
+
+Our research questions are primarily analyzing the relationship between different variables in the content of a production influencing the IMDb rating. Specifically, we want to know about: 
+
+1. How can we create a good fit model to properly predict IMDb rating?
+2. Is there any correlation between nudity and the IMDb rating of a film or a series?
+3. Do dramas have a greater IMDb rating than other genres?
+
+These topics can be very interesting, as we can figure out what factors might be influencing IMDb rating and their degree of influence, if there is any. This data can help with the creation of any series or movies since it shows what elements the production should keep in mind in order to potentially increase the IMDB rating. For example, if IMDb rating is identified to increase when there is no nudity, maybe the producer of a series or movie could decide to remove any nudity they might have included. Producers would want a higher rating in order to convince others to watch their production, or to make their production look better overall.
+
+
+Here is a quick look at our codebook:
+
+Variable Name | Description|
+--------------|------------|
+Name          | Name of the production|
+Date          | Date of creation / airing for production|
+Rate          | IMDb rating for specific production|
+Votes         | Number of votes for IMDb rating recieved (Scale of 1-10)|
+Genre         | Genre (Drama, Comedy, etc.)|
+Duration      | Duration (min)|
+Type          | Whether it is a film or series|
+Certificate   | Rating of film or series (R, PG-13, etc.)|
+Episodes      | Number of episodes|
+Nudity        | Amount of nudity (No Rate, None, Mild, Moderate, Severe)|
+Violence      | Amout of violence (No Rate, None, Mild, Moderate, Severe)|
+Profanity     | Amount of profanity (No Rate, None, Mild, Moderate, Severe)|
+Alcohol       | Amount of alcohol (No Rate, None, Mild, Moderate, Severe)|
+Frightening   | How frightening the film or series was (No Rate, None, Mild, Moderate, Severe)|
+
+``` {r general-setup, include=FALSE}
+# Read in the CSV file containing our data into our data frame
+imdb <- read_csv("imdb.csv")
+
+# Filter out shows and movies with no rating, change ratings to be numeric, and remove duplicates.
+# Will be used for all of our research questions.
+imdb_filtered <- imdb %>%
+  filter(Rate != "No Rate") %>%
+  mutate(Rate = as.numeric(Rate)) %>%
+  unique()
+```
+
+### Analysis
+
+In this section we will analyze our data to answer our research questions.
+
+### How Can we Create a Good Fit Model to Properly Predict IMDb Rating?
+
+This question could help figure out a good model that could be used to predict the IMDb rating of various films and series. Using this model, producers could calculate what IMDb rating they could recieve based on various traits in their production. Many factors can potentially influence IMDb rating, as people may prefer certain aspects of a production, causing them to rate it highly. In order to create a good model to properly predict IMDb rating, we want to find variables that may have a relationship with Rate. We can now test some variables and see if they have any relationship with the response variable, Rate.
+
+We will first filter the dataset to remove any observations for variables we may use that have "None" as a category, since that means the production did not get a specific rating for that variable. We will also only use productions with a duration of less than 250 minutes, since the majority of the data is within this.
+
+``` {r filters, echo=FALSE}
+# Filtered the data to create a new dataset called imdb_linear.
+imdb_linear <- imdb_filtered %>%
+  filter(Duration != "None") %>% # Filters out Duration with "None" as a rating.
+  filter(Violence != "None") %>% # Filters out Violence with "None" as a rating.
+  mutate(Duration = as.numeric(Duration)) %>% # Makes duration numeric.
+  mutate(Date = as.numeric(Date)) %>% # Makes Date numeric.
+  filter(Duration <= 250) # Only uses duration values less than 250.
+```
+
+
+```{r}
+
+
+
+```
+
+We will next calculate some statistics and create visualizations to figure out what potential variables we may include in our model. We want to find variables that have a relationship with our response variable, Rate, to use in our model since they could help predict IMDb rating more accurately.
+
+The first variable we will look at will be Rate, our response variable. We will calculate the mean and median Rate for productions in our data set to potentially compare to our other variables.
+
+``` {r response, echo=FALSE}
+# Find the mean and median IMDb rating in the new filtered data set.
+imdb_linear %>%
+  summarise(mean_Rate = mean(Rate),
+            median_Rate = median(Rate))
+```
+
+We notice both the mean and median IMDb rating for productions in our data set is around 7. We will next calculate the same statistics for one of our potential predictor variables, Type, separated by its two categories, series or film.
+
+``` {r type, echo=FALSE}
+# Find the mean and median rating when grouped by type in the data set.
+imdb_linear %>%
+  group_by(Type) %>%
+  summarise(mean_Type = mean(Rate),
+            median_Type = median(Rate))
+```
+
+We can observe with these statistics that films and series have different ratings on average, as the median and mean rating for films are about 1 rating lower than median and mean ratings for series. They are also both not the same as the actual median or mean values for Rate calculated earlier, further showing that there is some sort of relationship between these variables. There already looks like there is a relationship between Type, type of production, and Rate, IMDb rating, as we expect series to have a higher rating than films. We can use this as an explanatory variable.
+
+We will also test another potential predictor variable, Duration, by making a scatter plot comparing it to Rate.
+
+``` {r duration, echo=FALSE}
+# Create a scatterplot for Duration as an explanatory variable for Rate.
+ggplot(data=imdb_linear,
+       mapping=aes(x=Duration, y=Rate)) +
+  geom_point(position = "jitter") +
+  labs(title="Duration compared to IMDb Rating",
+       x="Duration (mins)",
+       y="IMDb Rating")
+
+ 
+```
+
+Using the scatter plot, there is no obvious relationship between these two variables. If we look closely, we can see that as duration increases IMDb stays about the same or slightly decreases for the most part. We could use this as an explanatory variable, since it may account for some of the variability in our model as we observe somewhat of a relationship between the variables Duration and Rate.
+
+Another potential variable we will test is Violence, representing the amount of violence in a production. We can visualize if Violence is in any way related to Rate by creating a box plot, then calculating the mean rating for each level of Violence. 
+
+```{r violence, echo=FALSE}
+# Create a boxplot separated by each level of Violence dependent on Rate.
+ggplot (data = imdb_linear, 
+       mapping = aes(x=Rate, y=Violence, fill=Violence) ) +
+  labs(title = "Amount of Violence in a Production Compared to IMDb Rating",
+       x = "IMDb Rating",
+       y = "Amount of Violence") +
+  geom_boxplot() +
+  scale_fill_viridis_d()
+
+#Calculate the mean IMDb rating for each level of Violence.
+imdb_linear %>% 
+  group_by(Violence) %>% 
+  summarise(mean_Violence = mean(Rate))
+```
+
+Using the boxplot it looks like Violence has somewhat of a relationship with response, as the medians are different and the spread varies for each level of Violence. Using the means, we can see that "No Rate" has a significantly lower mean rating than the other variables and is much lower than the mean rating calculated earlier for the data set, further proving Violence could be related to Rate. We can use this variable as a potential explanatory variable, as it could help make our model more accurately predict Rate.
+
+We will also try one last variable we create, Air_Date. Here we create a new variable called Air_Date which represents the time period, every 10 years other than years before 1960 and after 2020, a production was aired. We will create a box plot to see how it relates to our data. The category <1960s represents any air date prior to 1960.
+
+``` {r airdate, echo=FALSE}
+# Create new variable Air_Date which takes values between specific years.
+imdb_linear <- imdb_linear %>%
+  mutate(Air_Date = case_when(Date >= 1922 & Date <= 1959 ~ "<1960s",
+                              Date >= 1960 & Date <= 1969 ~ "1960s",
+                              Date >= 1970 & Date <= 1979 ~ "1970s",
+                              Date >= 1980 & Date <= 1989 ~ "1980s",
+                              Date >= 1990 & Date <= 1999 ~ "1990s",
+                              Date >= 2000 & Date <= 2009 ~ "2000s",
+                              Date >= 2010 & Date <= 2019 ~ "2010s",
+                              Date >= 2020 & Date <= 2023 ~ "2020s"))
+
+```
+
+``` {r date, echo=FALSE}
+# Create a boxplot for each level of Air_Date dependent on Rate
+ggplot(data=imdb_linear, 
+       mapping=aes(x=Rate, fill=Air_Date)) +
+  geom_boxplot() + 
+  labs(title = "Air Date Compared to Imdb Rating",
+       x = "IMDb Rating",
+       y = "Air Date (Years)")+
+     theme(
+      axis.ticks.y=element_blank(), #removes y-axis ticks.
+      axis.text.y=element_blank()
+    )+
+    scale_fill_viridis_d()
+```
+
+In the box plot we can see that the every level of Air_Date has a significantly different median IMDb rating for the most part, as the data is very spread out. It looks like the median for IMDb rating varies a lot as it tends to slightly decrease every time period from before the 1960s to 2020s, with the exception of the 1990s, meaning it could potentially be related to Rate in some way. Because of this, we could use Air_Date as another predictor variable since it seems like it heavily influences Rate and can make our prediction more accurate.
+
+Now we have identified 4 potential explanatory variables, Type, Duration, Violence, and Air_Date, that may help account for some of the variation within the data, making our model more accurate and a better fit. We will fit 3 models with these variables now to figure out which creates the best fit.
+
+We will start fitting linear models with a training split. We will use an 80/20 split, training having 80% of the rows and testing with 20%, with a seed of 1000. 
+
+``` {r train, echo=FALSE}
+# Split the data using initial_split to randomly sample 80% of the rows and 
+# assign it to a new training data set, imdb_train, and the rest to a new 
+# testing data set, imdb_test.
+
+# Set seed to 1000, chosen arbitrarily. 
+set.seed(1000) 
+imdb_split <- initial_split(imdb_linear, prop=0.80)
+
+imdb_train <- training(imdb_split)
+imdb_test <- testing(imdb_split)
+```
+
+The first model that will be tested use Type and Duration as predictors for Rate, the two variables we will explore first. We will calculate the adjusted r squared for every model to see how much variability is explained by our model and see how correlated the fit of the variables is. A higher adjusted r squared means more variability is being described by our model and the variables are more correlated. Below is the adjusted r squared for the first model.
+
+``` {r model-1, echo=FALSE}
+# Create the first fit model using Type and Duration as predictors for Rate.
+rate_main_fit <- lm(Rate ~ Type + Duration, data=imdb_train) 
+
+# Glance to find statistics for the model then take only the adjusted r squared.
+glance(rate_main_fit) %>% select(adj.r.squared) 
+```
+
+The adjusted r squared for this model was 0.235. We will see if adding new variable, Air_Date, could help increase our adjusted r squared to account for more variability in the data. We will now calculate the adjusted r squared for a model with Type, Duration, and Air_Date as predictors for Rate.
+
+``` {r model-2, echo=FALSE}
+# Create 2nd model, an updated first model with a new variable Air_Date.
+rate_main_fit2 <- update(rate_main_fit, . ~ . + Air_Date, data=imdb_train) 
+
+# Glance to find statistics for model then takes only adjusted r squared.
+glance(rate_main_fit2) %>% select(adj.r.squared) 
+```
+
+With the addition of Air_Date the adjusted r squared is 0.275, significantly greater than the first model. This model accounts for more variability within the data set and the fit of the variables are more correlated, but maybe adding one more variable could make it even better. We will now add Violence as a predictor to our model and calculate the adjusted r squared.
+
+``` {r model-3, echo=FALSE}
+# Create 3rd model, updated from 2nd model with new variable, Violence.
+rate_main_fit3 <- update(rate_main_fit2, . ~ . + Violence, data=imdb_train)  
+
+# Glance to find statistics for model then takes only adjusted r squared.
+glance(rate_main_fit3) %>% select(adj.r.squared)
+```
+
+This final model has an adjusted r squared of 0.288, higher than both of the other models. We can safely say the 2nd and 3rd model account for more of the variability within our data and the fit of the variables are more correlated with the highest adjusted r squared and could potentially be more accurate with predicting rate. We can further figure out which of these two to use by calculating their rmse, which helps us figure out how accurately they predict Rate. We want an rmse closer to 0, as a smaller rmse means our model has a smaller error and is more accurate when predicting the response variable, in our case Rate.
+
+The first model we will use is model 2, with Type, Duration, and Air_Date as predictors for Rate.
+
+``` {r test-1, echo=FALSE, message=FALSE}
+# Calculate RMSE for model 2 to make predictions on the testing data.
+imdb_pred <- predict(rate_main_fit2, newdata=imdb_test) %>%
+  bind_cols(imdb_test %>% select(Rate)) %>%
+  rename(pred = ...1)
+
+rmse(imdb_pred, truth = Rate, estimate = pred)
+```
+
+This model has an rmse of 0.897. We will now calculate the rmse for the third model which now includes Violence as a predictor along with the other variables.
+
+``` {r test-2, echo=FALSE, message=FALSE}
+# Calculate RMSE for model 3 to make predictions on the testing data.
+imdb_pred <- predict(rate_main_fit3, newdata=imdb_test) %>%
+  bind_cols(imdb_test %>% select(Rate)) %>%
+  rename(pred = ...1)
+
+rmse(imdb_pred, truth = Rate, estimate = pred)
+```
+
+This final model with the extra variable, Violence, has an rmse of 0.878. It is not that much different from our other model, as the third model only has a 0.019 smaller rmse and .013 greater adjusted r squared compared to the second model. According to Occams Razor, you should choose the model that is the simplest when comparing models that predict equally well. Since these models do predict equally well, we will choose the model that is simpler, model 2 with the variables Type, Duration, and Air_Date to predict Rate as it is simpler with less variables.
+
+Before we interpret the model, we will observe a residual plot to see if there are any obvious patterns in our model.
+
+``` {r residual, echo=FALSE}
+# Create residual plot for our second model.
+model1_aug <- augment(rate_main_fit2)
+ggplot(data=model1_aug,
+       mapping=aes(x=.fitted,
+                   y=.resid)) +
+  geom_point() + 
+  geom_hline(yintercept=0,color="red")
+```
+
+It looks like the residuals are random and there are no obvious patterns. This model seems like a good fit, we can now interpret it.
+
+Here are the coefficients for the model we choose to interpret:
+
+``` {r tidy, echo=FALSE}
+# Fit model and figures out values for each intercept and slope.
+tidy(rate_main_fit2) %>% select(term, estimate)
+```
+
+Interpretations:
+
+1. (Intercept) The intercept for this model is 5.99, meaning Rate, IMDb rating, is 5.99 holding other variables in this model constant with a baseline of Type being a Film and Air_Date being <1960s, meaning the year the production was aired was before 1960.
+
+2. TypeSeries: When the specific type of a series or film is series, we expect Rate, IMDb rating, to increase by 1.91 holding other variables constant. (Baseline of TypeFilm, meaning the type of the production was a film)
+
+3. Duration: When duration increases by 1, meaning the duration of a production was a minute longer, then we expect Rate, IMDb rating, to increase by 0.0136 holding other variables constant.
+
+4. Air_Date1960s, when a production aired in the 1960s, we expect Rate, IMDb rating, to increase by -0.471, or decrease by 0.471, holding other variables constant. (Using a baseline of Air_Date<1960s, meaning a production aired prior to 1960.)
+
+5. Air_Date1970s, when a production aired in the 1970s, we expect Rate, IMDb rating, to increase by -0.332, or decrease by 0.332, holding other variables constant. (Using a baseline of Air_Date<1960s, meaning a production aired prior to 1960.)
+
+6. Air_Date1980s, when a production aired in the 1980s, we expect Rate, IMDb rating, to increase by -0.728, or decrease by 0.728, holding other variables constant. (Using a baseline of Air_Date<1960s, meaning a production aired prior to 1960.)
+
+7. Air_Date1990s, when a production aired in the 1990s, we expect Rate, IMDb rating, to increase by -0.695, or decrease by 0.695, holding other variables constant. (Using a baseline of Air_Date<1960s, meaning a production aired prior to 1960.)
+
+8. Air_Date2000s, when a production aired in the 2000s, we expect Rate, IMDb rating, to increase by -0.798, or decrease by 0.798, holding other variables constant. (Using a baseline of Air_Date<1960s, meaning a production aired prior to 1960.)
+
+9. Air_Date2010s, when a production aired in the 2010s, we expect Rate, IMDb rating, to increase by -0.945, or decrease by 0.945, holding other variables constant. (Using a baseline of Air_Date<1960s, meaning a production aired prior to 1960.)
+
+10. Air_Date2020s, when a production aired in the 2010s, we expect Rate, IMDb rating, to increase by -1.18, or decrease by 1.18, holding other variables constant. (Using a baseline of Air_Date<1960s, meaning a production aired prior to 1960.)
+
+This is a good fit model that could be used to predict Rate, IMDb rating, for a production using the specific variables Type, Duration, and Air_Date.
+
+### Is There Any Correlation Between Nudity And The IMDb Rating Of A Film Or a Series?
+
+In this sub-section, we will try to explore if there is a correlation between the IMDb rating of a film or series and the level of nudity in its content. This question could help any producers figure out how nudity could potentially affect the IMDb rating of their production.
+
+First, since there are some productions of which the level of nudity was not rated, we need to filter out those exceptions. We now can calculate the general median score for rate in order to compare it with the median rate of each level of nudity.
+
+```{r nudity sub-section 1, echo=FALSE}
+# filter out productions with no rating fot nudity.
+imdb_nudity_filtered <- imdb_filtered %>% filter(!is.na(Nudity), Nudity != "No Rate")
+# calculating the median
+imdb_nudity_filtered %>% summarize(median = median(Rate))
+```
+
+Now to have a basic idea of general ratings for each level of nudity, we can make a box plot. We can compare the difference in median IMDb rating for each level by using a line to indicate what the actual median IMDb rating in the data set is, observing how far the off median is for each level.
+
+```{r nudity sub-section 1.2, echo=FALSE}
+# make a box plot for every level of nudity.
+ggplot(data = imdb_nudity_filtered, mapping=aes(x=Rate, fill=Nudity)) +
+  geom_boxplot() +
+  labs(title="IMDb Rate by Each Level of Nudity",
+       x="IMDb rating",
+       y="Level of nudity"
+       )+
+  geom_vline(xintercept = 7, linetype="dotted", color = "red", size=1.5)+
+  theme(axis.ticks.y=element_blank(),
+    axis.text.y=element_blank()
+  )+
+  scale_fill_viridis_d()
+```
+
+By simply looking at the box plot, it seems like there is no obvious correlation between the level of nudity of a film or series and its IMDb rating. However, while the median of the lower two levels (None and Mild) seems to be either the same or extremely close to the general median, the median rate of the higher levels (Moderate, Severe) of nudity is in fact slightly higher. This might suggest that audiences would prefer more nudity in a film or series. 
+
+To make further and more precise examinations, we will set the level "None", "Mild" into a category called "Low", and set the "Moderate" and "Severe" level into a category called "High". We can then calculate the median IMDb rating for these two levels.
+
+```{r nudity sub-section 2, echo=FALSE}
+nudity_analysis <- imdb_nudity_filtered %>% 
+  mutate(nudity_binary = case_when(Nudity == "Moderate" ~ "High", 
+                                   Nudity == "Severe" ~ "High",
+                                   Nudity == "None" ~ "Low",
+                                   Nudity == "Mild" ~ "Low"))
+nudity_analysis %>% 
+  group_by(nudity_binary) %>%
+  summarize(median = median(Rate))
+```
+
+There still doesn't seem to be any difference between the two medians. To further figure out if there is any relationship, we can calculate a 99% confidence interval of the difference in mean IMDb rating between productions with "High" nudity level and those with "Low" nudity level and visualize the distribution of the difference in Rating between the levels.
+
+``` {r nudity sub-section 3, echo=FALSE}
+# set a seed to ensure it is the same every time.
+set.seed(2355)
+boot_diff_mean <- nudity_analysis %>% 
+  specify(Rate ~ nudity_binary) %>% 
+  generate(reps=5000, type="bootstrap") %>%
+  calculate(stat="diff in means", 
+            order=c("High", "Low") ) 
+
+# visualize the simulation-based bootstrap distribution
+boot_diff_mean %>% visualize()
+# calculate the 99% confidence interval.
+boot_diff_mean %>% get_confidence_interval(level=0.99)
+```
+
+We can say with 99% confidence that the true mean difference in IMDb ratings between productions with "High" nudity level and those with "Low" nudity level is between -0.056 and 0.115. Since this confidence includes 0, it doesn't necessarily suggest that productions with "High" level of nudity have higher ratings than those with "Low" level of nudity. To analyze further, we will test our hypothesis with the null distribution below.
+
+We will use an alternative hypothesis that audiences favor productions with "High" level of nudity over the ones with "Low" level of nudity, and the null hypothesis will be that audiences are indifferent of whether the production contains a "High" level of nudity or a "Low" level of nudity.
+
+```{r nudity sub-section 4, echo=FALSE}
+# set a seed to ensure it is the same every time.
+set.seed(2355)
+# set up our null-distribution of the difference in medians between "High" level and "Low" level
+  null_dist <- nudity_analysis %>% 
+  specify(Rate ~ nudity_binary) %>%
+  hypothesize(null = "independence") %>%
+  generate(reps = 5000, type = "permute") %>% #Uses permute method.
+  calculate( stat = "diff in medians",
+             order = c("High", "Low") )
+# get the observed difference
+  obs_diff = 7.1 - 7.0
+```
+
+```{r nudity sub-section 5, echo=FALSE}
+# visualize where our observed sample lands on the null distribution
+null_dist %>% visualise() + 
+  shade_p_value(obs_stat = obs_diff, direction = "right")
+# get the p value for the null hypothesis
+null_dist %>% 
+  get_p_value(obs_stat = obs_diff, direction = "right")
+```
+
+Since the p-value is very large, 0.248, which is also greater than the conventional threshold of 0.05, we don't have enough evidence to reject the null hypothesis of "audiences are indifferent of whether the production contains a "High" level of nudity or an "Low" level of nudity." Therefore, we can also further conclude that there is no correlation between the level of nudity in a production and the IMDb rate of the production.
+
+### Do Dramas Have a Greater IMDb Rating Than Other Genres?
+
+According to [filmsite.org](https://www.filmsite.org/bestpics2.html#:~:text=The%20most%20frequent%20Best%20Picture,Grand%20Hotel%20(1931%2F32)), the most common category for best picture nominee and overall winner has been the Drama category. This leads us to ask the question: while Dramas may have the most critical acclaim, does this translate into wide spread mainstream appeal as indicated by IMDb rating?
+
+First we took our data and then filtered out all of the movies and tv shows that had no rating as they provided no information with regards to answering our question. We also filtered out all of the duplicate entries in our dataset. Then we reduced our dataframe to only name, rate, and genre and changed the genre to have a binary encoding of Drama and Non-Drama.
+
+```{r genre-setup, echo=FALSE}
+imdb_drama <- imdb_filtered %>%
+  # Select the cols we will use to make the calculations faster
+  select(Name, Rate, Genre) %>% 
+  # Mutate our genre header to have a binary encoding of Drama and Non-Drama
+  mutate(Genre = ifelse (str_detect(Genre, "Drama"), "Drama", "Non-Drama"))
+```
+
+Next, we wanted to visualize the distribution of IMDb scores for dramas versus non-dramas as seen below.
+
+```{r genre-hist, echo=FALSE}
+# Create a histogram of rating for dramas vs. non-dramas
+ggplot(data=imdb_drama, 
+       mapping=aes(x=Rate)) +
+  geom_histogram(binwidth = 0.5) +
+            facet_wrap(~Genre) +
+  labs(title="IMDb Rating Distribution",
+          subtitle="Faceted by Genre",
+          x = "IMDb Rating (Scale of 1.0 to 10.0)")
+```
+
+As can be seen in the histogram for the distribution of counts for rating in dramas and non-dramas, both dramas and non-dramas appear to be unimodal and left-skewed. In the graph it appears as though dramas tend to have higher ratings on average than non-dramas as the peak of the data in the dramas graph is higher than that of the non-dramas.
+
+``` {r genre-box, echo=FALSE}
+# Create a boxplot for rating for dramas vs. non-dramas
+ggplot(data=imdb_drama,mapping=aes(x=Rate, fill=Genre)) +
+    geom_boxplot() +
+    labs(title="IMDB Rating for Dramas vs Non-Dramas",
+         x="IMDB Rating (Scale of 1.0 to 10.0)",
+         fill="Genre")+
+     theme(
+      axis.ticks.y=element_blank(),
+      axis.text.y=element_blank()
+    )+
+    scale_fill_viridis_d()
+```
+
+As can be seen in the boxplot for the distribution of IMDB Rating for dramas versus non-dramas, dramas do have a higher median rating than non-dramas. The spread of the data for both dramas and non-dramas appear to be of about the same size. We can further calculate some statistics for both genres.
+
+``` {r genre-sum, echo=FALSE}
+# Get the median, mean, and count for the distribution of ratings for dramas vs. non-dramas
+imdb_drama %>%
+  group_by(Genre) %>%
+  summarise(median = median(Rate),
+            mean = mean(Rate),
+            count = n())
+```
+
+Both the median and mean IMDb for shows and movies in the Drama genre are higher than shows and movies that are not dramas. This leads us to think that Dramas may in fact have higher scores on average, but we cannot say anything with confidence until we run some tests.
+
+The first test we will run is the null hypothesis test. Our null hypothesis is that the IMDb rating is independent of the genre for dramas versus non-dramas. Our alternative is that dramas have a higher IMDb rating than other genres. Our null hypothesis test will use permutation and be of the difference in medians between dramas and non-dramas. We will select a significance level of 0.01.
+
+``` {r null-dist, warning=FALSE, echo=FALSE}
+# Set a seed to ensure it is the same every time
+set.seed(2355)
+
+# Set up our null-distribution of the difference in medians between dramas and non-dramas
+null_dist <- imdb_drama %>% 
+  specify(Rate ~ Genre) %>%
+  hypothesize(null = "independence") %>%
+  generate(reps = 1000, type = "permute") %>%
+  calculate( stat = "diff in medians",
+             order = c("Drama", "Non-Drama") )
+
+# Get the observed difference
+obs_diff = 7.3 - 6.7
+
+# Visualize where our observed sample lands on the null distribution
+null_dist %>% visualise(bins = .1) + 
+  shade_p_value(obs_stat = obs_diff, direction = "right")
+
+# Get the p-value of our observed sample
+null_dist %>% 
+  get_p_value(obs_stat = obs_diff, direction = "right")
+```
+
+Since our p-value is incredibly small, so small that it rounds to 0, we can confidently reject the null hypothesis in favor of our alternative as the observed sample falls in the tails of the null distribution and is below the significance level. But just to be sure, we will also run a confidence interval test on the data.
+
+Below is a simulation-based bootstrap distribution of the difference in mean IMDb rating between dramas and non-dramas. 
+
+``` {r conf-int, warning=FALSE, echo=FALSE}
+# Set a seed to ensure it is the same every time
+set.seed(2355)
+
+# Get the bootstrap distribution of the difference in means between dramas and non-dramas
+boot_diff_mean <- imdb_drama %>% 
+  specify(Rate ~ Genre) %>% 
+  generate(reps=1000, type="bootstrap") %>%
+  calculate(stat="diff in means", 
+            order=c("Drama", "Non-Drama") ) 
+
+# Visualize the distribution of the bootstrap
+boot_diff_mean %>% visualize()
+
+# Get the confidence interval of the bootstrap
+boot_diff_mean %>% get_confidence_interval(level=0.99)
+```
+
+We used a 99% confidence interval, so we can say with 99% confidence that the true mean difference in IMDb ratings for dramas versus non-dramas is between 0.435 and 0.591. Since 0 is not included in the interval, we are 99% confident that the IMDb rating for dramas is higher than non-dramas.
+
+With all of this evidence we can say with confidence that shows and movies that are dramas are on average more likely to have a higher IMDb rating than non-dramas.
+
+### Conclusion
+
+In the good fit model created, we found out how much of an impact certain variables had on IMDb rating. It seems like Type has the largest impact on IMDb rating, as when the type was a series we expect the rating to increase by 1.91 using film as the baseline. Duration also has a positive relationship with Rate with a slope of 0.0136, as when Duration increases so does Rate. With these two variables, it could be interesting for anybody thinking about creating a production that series tend to have higher IMDb ratings than films and usually the longer the duration the higher the rating. They could use these observations to create a series that is longer than usual, potentially having a very high IMDb rating. The IMDb ratings seem to be decreasing by time period, something people can't necessarily control. Though, some could use this information to potentially create a production that has a theme that was common prior to the 1960s, since it might be more popular and generate a higher IMDb rating.
+
+Furthermore, we notice that productions with more nudity content seems to have a higher IMDb rating in our data. However, Based on our research, we have not found enough evidence to support that the amount of nudity in a production will affect the IMDb rating. This could suggest that the difference of median in rating between productions with more nudity and productions with less nudity appeared in our data might be pure coincidence, and audiences does not rate movies or films based on the amount of nudity in the content. With this conclusion, producers of films or series should add or delete nudity scenes depending on personal preference as we were not able to conclude that there is an impact on IMDb rating based on nudity.
+
+Finally, through our research we found that shows and movies in the drama genre tend to have a higher rating than other genres as indicted by IMDb rating. This could be due to cultural norms as to what is considered a "good" movie. Dramas tend to have room for actors and actresses to express themselves and show off their acting skills. They also tend to be about more serious topics and have more societal commentary than other genres such as comedies. As said before, dramas do tend to win best picture at the academy awards more than other genres, which now looks like more than just a coincidence. 
+
+The analysis conducted in this research wasn't perfect, as it could have been improved. One way we could improve our analysis would be to test and compare more variables to each other, as some variables may have some sort of correlation to one another that could potentially affect IMDb rating. For the model we could have also tested more variables rather than those four, but it was tough as the variables in the data set weren't easy to work with and the levels were very generalized for variables like Violence and Frightening. One problem with the coefficients in the model created is that films are expected to have a longer duration than series. This could potentially account for why the TypeSeries variable was so high, meaning we expected Series to have a much greater IMDb rating as opposed to films. The duration for a film is much longer, meaning the duration coefficient would be multiplied by a greater number for films than series using the models equation, increasing the predicted IMDb rating.
+
+The data set wasn't perfect either. One error in the data set was that the data isn't completely up to date, as some of the IMDb ratings have changed over time and could have potentially changed our results. There aren't also any defined levels for some variables. For example, Violence has levels that use generalizations to describe how much violence is in the film, like "none" or "moderate". These aren't exact levels and may be subjective and could potentially be not accurate.
+
+Hopefully these results can help any producers decide on what they could potentially include in their productions in order to increase their IMDb rating.
